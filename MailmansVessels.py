@@ -11,11 +11,11 @@ def analyze_temporal_vessels(score_path, window_size=4.0):
     score = music21.converter.parse(score_path)
     # Extraer todas las notas/acordes en una línea de tiempo plana
     flat_score = score.flatten().notes
-    
+
     # Definir el rango temporal
     total_duration = score.quarterLength
     windows = np.arange(0, total_duration, window_size)
-    
+
     results = []
 
     for start in windows:
@@ -249,3 +249,4 @@ def plot_decile_comparison(all_period_data, metric='entropy'):
     plt.legend(title="Periodos", bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     plt.show()
+    

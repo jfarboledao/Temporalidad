@@ -386,3 +386,156 @@
     width: 100%;
   }
 }
+
+/* ─── Navigation bar ──────────────────────────────────────────────── */
+
+.app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px clamp(16px, 4vw, 48px);
+  backdrop-filter: blur(20px);
+  background: rgba(11, 16, 32, 0.84);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.app-nav-logo {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--accent-soft);
+  letter-spacing: 0.06em;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.app-nav-links {
+  display: flex;
+  gap: 6px;
+}
+
+.nav-link {
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.nav-link:hover {
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.nav-link.active {
+  color: var(--text-strong);
+  background: rgba(248, 191, 70, 0.14);
+}
+
+@media (max-width: 480px) {
+  .app-nav-logo {
+    display: none;
+  }
+}
+
+/* ─── Vessels page — queued file chips ───────────────────────────── */
+
+.file-list-panel {
+  backdrop-filter: blur(18px);
+  background: rgba(13, 18, 35, 0.72);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--panel-shadow);
+  border-radius: 22px;
+  padding: 18px 20px;
+  margin-top: 22px;
+}
+
+.file-list-header {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  color: var(--accent-soft);
+  margin: 0 0 14px;
+}
+
+.file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 6px 10px 6px 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border-soft);
+}
+
+.file-chip-name {
+  font-size: 0.85rem;
+  color: var(--text-strong);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip-size {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.file-chip-remove {
+  appearance: none;
+  border: 0;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-muted);
+  border-radius: 999px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.file-chip-remove:hover {
+  background: rgba(255, 100, 100, 0.22);
+  color: #ffd7d7;
+}
+
+/* ─── Vessels page — per-file result block ────────────────────────── */
+
+.vessels-file-block {
+  margin-top: 36px;
+}
+
+.vessels-file-label {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  color: var(--accent-soft);
+  margin: 0 0 12px;
+}
+
+.vessels-filename {
+  word-break: break-all;
+}
+
+.vessels-skipped-box {
+  background: rgba(90, 65, 15, 0.48);
+  color: #ffe8a0;
+}
