@@ -1,5 +1,7 @@
+import asyncio
 import tempfile
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List
 
@@ -24,6 +26,10 @@ app.add_middleware(
 )
 
 _ALLOWED_SUFFIXES = {".krn", ".xml", ".musicxml", ".mxl"}
+
+# Thread pool for CPU-bound music21 analysis.
+# Each file is handled by a separate thread so multiple files run concurrently.
+_pool = ThreadPoolExecutor(max_workers=8)
 
 
 @app.get("/health")
@@ -61,17 +67,35 @@ async def analizar_endpoint(file: UploadFile = File(...)):
     return {"filename": filename, **resultados}
 
 
+async def _analyze_one(filename: str, content: bytes, suffix: str) -> dict:
+    """Write a temp file and run the vessel analysis in the thread pool."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            _pool, analyze_file_for_api, str(tmp_path), filename
+        )
+        return {"filename": filename, "ok": True, "result": result}
+    except Exception as exc:
+        return {"filename": filename, "ok": False, "reason": str(exc)}
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 @app.post("/api/vessels")
 async def vessels_endpoint(files: List[UploadFile] = File(...)):
     """
     Analyze one or more score files with the MailmansVessels temporal analysis pipeline.
-    Accepts .krn, .xml, .musicxml, and .mxl files.
-    Unsupported files are skipped and reported in the 'skipped' list.
+    All valid files are processed concurrently in a thread pool.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No se enviaron archivos.")
 
-    processed: list[dict] = []
+    # 1. Read all file contents first (async I/O, fast)
+    tasks = []
     skipped: list[dict] = []
 
     for upload in files:
@@ -82,20 +106,23 @@ async def vessels_endpoint(files: List[UploadFile] = File(...)):
             skipped.append({"filename": filename, "reason": "Formato no soportado"})
             continue
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(await upload.read())
-            tmp_path = Path(tmp.name)
+        content = await upload.read()
+        tasks.append(_analyze_one(filename, content, suffix))
 
-        try:
-            result = analyze_file_for_api(str(tmp_path), filename)
-            if "error" in result:
-                skipped.append({"filename": filename, "reason": result["error"]})
-            else:
-                processed.append({"filename": filename, **result})
-        except Exception as exc:
-            skipped.append({"filename": filename, "reason": str(exc)})
-        finally:
-            tmp_path.unlink(missing_ok=True)
+    # 2. Run all analyses concurrently
+    outcomes = await asyncio.gather(*tasks)
+
+    # 3. Collect results
+    processed: list[dict] = []
+    for outcome in outcomes:
+        if not outcome["ok"]:
+            skipped.append({"filename": outcome["filename"], "reason": outcome["reason"]})
+            continue
+        result = outcome["result"]
+        if "error" in result:
+            skipped.append({"filename": outcome["filename"], "reason": result["error"]})
+        else:
+            processed.append({"filename": outcome["filename"], **result})
 
     if not processed and skipped:
         first_reason = skipped[0]["reason"]
