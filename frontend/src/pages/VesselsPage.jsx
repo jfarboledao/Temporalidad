@@ -12,6 +12,26 @@ const METRIC_LABELS = {
   poly_activity: 'Poly Activity',
 }
 
+const CENTURY_METRIC_COLS = [
+  { key: 'flux_rate',        label: 'Flux Rate' },
+  { key: 'avg_gestalt',      label: 'Avg Gestalt' },
+  { key: 'tension_index',    label: 'Tension' },
+  { key: 'entropy',          label: 'Entropy' },
+  { key: 'vertical_density', label: 'Vert. Density' },
+  { key: 'poly_activity',    label: 'Poly Activity' },
+]
+
+function centuryLabel(n) {
+  const num = parseInt(n, 10)
+  if (isNaN(num)) return String(n)
+  const mod10 = num % 10
+  const mod100 = num % 100
+  const suffix = [11, 12, 13].includes(mod100)
+    ? 'th'
+    : mod10 === 1 ? 'st' : mod10 === 2 ? 'nd' : mod10 === 3 ? 'rd' : 'th'
+  return `${num}${suffix} century`
+}
+
 function formatError(error) {
   if (!error) return ''
   if (typeof error === 'string') return error
@@ -236,6 +256,61 @@ export function VesselsPage() {
               {results.total_files_skipped !== 1 ? 's omitidos' : ' omitido'}:{' '}
               {results.skipped.map((s) => s.filename).join(', ')}
             </section>
+          )}
+
+          {/* Century summary — shown when 2+ files are processed */}
+          {results.century_summary && results.century_summary.rows.length > 0 && (
+            <div className="century-summary-block">
+              <p className="vessels-file-label">Century summary</p>
+
+              {results.century_summary.files_without_century?.length > 0 && (
+                <p className="century-no-century-note">
+                  Century could not be determined for:{' '}
+                  {results.century_summary.files_without_century.join(', ')}
+                </p>
+              )}
+
+              {/* Profile chart */}
+              {results.century_summary.chart && (
+                <article className="result-card graph-card century-chart-card">
+                  <p className="card-label">Vessel profile by century (normalized means)</p>
+                  <img
+                    className="graph-image"
+                    src={`data:image/png;base64,${results.century_summary.chart}`}
+                    alt="Century vessel profile chart"
+                  />
+                </article>
+              )}
+
+              {/* Summary table */}
+              <article className="result-card table-card century-table-card">
+                <p className="card-label">Mean vessel metrics per century</p>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Century</th>
+                        <th>Files</th>
+                        {CENTURY_METRIC_COLS.map((c) => (
+                          <th key={c.key}>{c.label}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.century_summary.rows.map((row, ri) => (
+                        <tr key={`century-${row.century}-${ri}`}>
+                          <td>{centuryLabel(row.century)}</td>
+                          <td>{row.file_count}</td>
+                          {CENTURY_METRIC_COLS.map((c) => (
+                            <td key={c.key}>{fmt(row[c.key])}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
           )}
 
           {results.files.map((fileResult, fi) => (

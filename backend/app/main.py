@@ -11,7 +11,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
 from Prueba_1 import analizar_archivo
-from vessels import analyze_file_for_api
+from vessels import analyze_file_for_api, compute_century_summary
 
 app = FastAPI()
 
@@ -87,7 +87,7 @@ async def vessels_endpoint(files: List[UploadFile] = File(...)):
             tmp_path = Path(tmp.name)
 
         try:
-            result = analyze_file_for_api(str(tmp_path))
+            result = analyze_file_for_api(str(tmp_path), filename)
             if "error" in result:
                 skipped.append({"filename": filename, "reason": result["error"]})
             else:
@@ -106,9 +106,14 @@ async def vessels_endpoint(files: List[UploadFile] = File(...)):
         )
         raise HTTPException(status_code=400, detail=detail)
 
+    century_summary = (
+        compute_century_summary(processed) if len(processed) >= 2 else None
+    )
+
     return {
         "files": processed,
         "total_files_processed": len(processed),
         "total_files_skipped": len(skipped),
         "skipped": skipped,
+        "century_summary": century_summary,
     }

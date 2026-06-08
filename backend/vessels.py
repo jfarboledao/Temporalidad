@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import re
 import warnings
 from io import BytesIO
+from pathlib import Path
 
 import matplotlib
 
@@ -36,6 +38,26 @@ _VESSEL_LABELS = {
 }
 _TENSION_WEIGHTS = [10.0, 5.0, 2.0, 1.0, 1.0, 0.5]
 
+# Metric keys used for century summary (same order used in the profile chart)
+_SUMMARY_METRICS = [
+    "flux_rate",
+    "avg_gestalt",
+    "tension_index",
+    "entropy",
+    "vertical_density",
+    "poly_activity",
+]
+
+
+def _century_ordinal(n: int) -> str:
+    """Return e.g. '14th century' from integer 14."""
+    suffix = (
+        {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+        if n % 100 not in (11, 12, 13)
+        else "th"
+    )
+    return f"{n}{suffix} c."
+
 
 def get_polyphonic_density(elements):
     """
@@ -59,6 +81,41 @@ def get_polyphonic_density(elements):
     )
 
     return avg_vertical_density, polyphonic_activity
+
+
+def extract_century(score_path: str, filename: str) -> int | None:
+    """
+    Extract the century of composition.
+    Tries score metadata first (date fields); falls back to parsing the filename
+    pattern  XX.YYYY-ZZZZ_Name  where XX is the two-digit century number.
+    """
+    # 1. Metadata
+    try:
+        score = music21.converter.parse(score_path)
+        meta = score.metadata
+        for attr in ("date", "dateCreated", "dateFirstPublished", "dateModified"):
+            val = getattr(meta, attr, None)
+            if val is None:
+                continue
+            year: int | None = None
+            if hasattr(val, "year") and val.year:
+                year = int(val.year)
+            else:
+                m = re.search(r"\b(\d{4})\b", str(val))
+                if m:
+                    year = int(m.group(1))
+            if year:
+                return (year - 1) // 100 + 1
+    except Exception:
+        pass
+
+    # 2. Filename pattern  XX.YYYY-ZZZZ_Name  or  XX_...  or  XX-...
+    stem = Path(filename).stem
+    m = re.match(r"^(\d{2})[.\-_]", stem)
+    if m:
+        return int(m.group(1))
+
+    return None
 
 
 def analyze_temporal_vessels(
@@ -191,10 +248,124 @@ def _plots_per_metric(df: pd.DataFrame, x_col: str, suffix: str) -> dict[str, st
     return charts
 
 
-def analyze_file_for_api(score_path: str) -> dict:
+def _century_profile_chart(df: pd.DataFrame) -> str:
+    """
+    Multi-line profile chart: one line per century, vessel metrics on the x-axis.
+    Each metric is min-max normalized across centuries so all lines share the same scale.
+    """
+    available = [m for m in _SUMMARY_METRICS if m in df.columns]
+    x = np.arange(len(available))
+    x_labels = [_VESSEL_LABELS[m] for m in available]
+
+    # Normalize each metric column across centuries for shape comparison
+    norm_df = df.copy()
+    for m in available:
+        col = df[m].astype(float)
+        mn, mx = col.min(), col.max()
+        norm_df[m] = (col - mn) / (mx - mn) if mx > mn else pd.Series([0.5] * len(col), index=col.index)
+
+    tab10 = plt.cm.get_cmap("tab10").colors  # type: ignore[attr-defined]
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    fig.patch.set_facecolor("#0d1223")
+    ax.set_facecolor("#161f38")
+
+    for idx, (_, row) in enumerate(norm_df.iterrows()):
+        raw_row = df.iloc[idx]
+        century_val = raw_row.get("century", "?")
+        try:
+            label = _century_ordinal(int(century_val))
+        except (ValueError, TypeError):
+            label = str(century_val)
+        n_files = int(raw_row.get("file_count", 1))
+
+        y = [float(row[m]) for m in available]
+        color = tab10[idx % len(tab10)]
+        ax.plot(x, y, marker="o", lw=2.2, color=color, alpha=0.9,
+                label=f"{label}  (n={n_files})")
+        ax.fill_between(x, y, alpha=0.06, color=color)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(x_labels, rotation=20, ha="right", color="#ece7d8", fontsize=9)
+    ax.set_ylabel("Normalized mean (0 → 1)", color="#ece7d8", fontsize=9)
+    ax.set_title("Century Vessel Profiles", color="#f8f5eb", fontsize=12, pad=12)
+    ax.tick_params(colors="#ece7d8", labelsize=8)
+    for spine in ax.spines.values():
+        spine.set_color((1.0, 1.0, 1.0, 0.12))
+    ax.legend(facecolor="#1a2240", labelcolor="#ece7d8", framealpha=0.85,
+              fontsize=9, loc="upper right")
+    ax.grid(True, alpha=0.12, color="white", axis="y")
+    ax.set_ylim(-0.05, 1.1)
+    plt.tight_layout()
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight",
+                facecolor=fig.get_facecolor(), dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8")
+
+
+def compute_century_summary(file_results: list[dict]) -> dict:
+    """
+    Group processed file results by century and compute mean vessel metrics per century.
+    Returns rows (list of dicts) and a base64 profile chart.
+    Only files with a non-None century are included; files with None century are listed
+    separately so the frontend can show them.
+    """
+    metric_map = {
+        "flux_rate": "avg_flux_rate",
+        "avg_gestalt": "avg_gestalt",
+        "tension_index": "avg_tension",
+        "entropy": "avg_entropy",
+        "vertical_density": "avg_vertical_density",
+        "poly_activity": "avg_poly_activity",
+    }
+
+    rows = []
+    unknown = []
+    for fr in file_results:
+        century = fr.get("century")
+        summary = fr.get("summary", {})
+        if century is None:
+            unknown.append(fr.get("filename", "?"))
+            continue
+        row = {"century": century}
+        for dest, src in metric_map.items():
+            row[dest] = float(summary.get(src, 0.0))
+        rows.append(row)
+
+    if not rows:
+        return {"rows": [], "chart": None, "files_without_century": unknown}
+
+    df = pd.DataFrame(rows)
+    grouped = (
+        df.groupby("century")
+        .agg(
+            file_count=("flux_rate", "count"),
+            flux_rate=("flux_rate", "mean"),
+            avg_gestalt=("avg_gestalt", "mean"),
+            tension_index=("tension_index", "mean"),
+            entropy=("entropy", "mean"),
+            vertical_density=("vertical_density", "mean"),
+            poly_activity=("poly_activity", "mean"),
+        )
+        .reset_index()
+        .sort_values("century")
+    )
+
+    return {
+        "rows": grouped.to_dict(orient="records"),
+        "chart": _century_profile_chart(grouped),
+        "files_without_century": unknown,
+    }
+
+
+def analyze_file_for_api(score_path: str, filename: str = "") -> dict:
     """
     Full vessel pipeline for a single file.
-    Returns a JSON-serializable dict with raw/normalized data and per-metric base64 charts.
+    Returns a JSON-serializable dict with raw/normalized data, per-metric charts,
+    and the detected century (int or None).
     """
     raw_df = analyze_temporal_vessels(score_path)
 
@@ -219,7 +390,10 @@ def analyze_file_for_api(score_path: str) -> dict:
         "avg_poly_activity": float(raw_df["poly_activity"].mean()),
     }
 
+    century = extract_century(score_path, filename) if filename else None
+
     return {
+        "century": century,
         "windows": raw_df.to_dict(orient="records"),
         "windows_normalized": norm_df.to_dict(orient="records"),
         "summary": summary,
