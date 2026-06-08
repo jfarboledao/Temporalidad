@@ -50,6 +50,34 @@ function fmt(n, decimals = 3) {
   return typeof n === 'number' ? n.toFixed(decimals) : '—'
 }
 
+function UploadIcon() {
+  return (
+    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  )
+}
+
+function FolderIcon() {
+  return (
+    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+    </svg>
+  )
+}
+
+function AlertIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  )
+}
+
 export function VesselsPage() {
   const filesInputRef = useRef(null)
   const folderInputRef = useRef(null)
@@ -94,13 +122,10 @@ export function VesselsPage() {
 
   const runAnalysis = async () => {
     if (selectedFiles.length === 0) { setError('Selecciona al menos un archivo.'); return }
-
     const formData = new FormData()
     selectedFiles.forEach((f) => formData.append('files', f))
-
     setIsLoading(true)
     setError('')
-
     try {
       const response = await fetch(`${API_URL}/api/vessels`, { method: 'POST', body: formData })
       const payload = await response.json()
@@ -124,22 +149,22 @@ export function VesselsPage() {
           <p className="eyebrow">MailmansVessels · Temporal Analysis</p>
           <h1>Analyze the shape of time in music.</h1>
           <p className="lead">
-            Upload .krn, .xml, or .musicxml files — or an entire folder — and the backend will
-            run <span>analyze_temporal_vessels</span>, computing flux rate, gestalt length,
-            tension index, information entropy, and polyphonic density across time windows.
+            Upload .krn, .xml, or .musicxml files — or an entire folder — and the backend runs{' '}
+            <span>analyze_temporal_vessels</span>, computing flux rate, gestalt, tension,
+            entropy, and polyphonic density across time windows.
           </p>
           <div className="stats-row">
             <div className="stat-card">
               <span className="stat-value">06</span>
-              <span className="stat-label">vessels measured</span>
+              <span className="stat-label">Vessels measured</span>
             </div>
             <div className="stat-card">
-              <span className="stat-value">{fileCount}</span>
-              <span className="stat-label">files queued</span>
+              <span className="stat-value">{fileCount || '—'}</span>
+              <span className="stat-label">Files queued</span>
             </div>
             <div className="stat-card">
               <span className="stat-value">4 QL</span>
-              <span className="stat-label">default window</span>
+              <span className="stat-label">Default window</span>
             </div>
           </div>
         </div>
@@ -162,20 +187,30 @@ export function VesselsPage() {
         >
           <div className="drop-zone-glow" />
           <div className="drop-zone-inner">
-            <span className="drop-label">Files or folder</span>
+            <div className="drop-zone-icon">
+              {fileCount > 0 ? <FolderIcon /> : <UploadIcon />}
+            </div>
+            <span className="drop-label">{fileCount > 0 ? 'Files selected' : 'Files or folder'}</span>
             <h2>
               {fileCount === 0
                 ? 'Drop score files here'
                 : `${fileCount} file${fileCount !== 1 ? 's' : ''} selected`}
             </h2>
             <p>
-              Drop .krn / .xml / .musicxml files here, or click to browse. Use
-              &ldquo;Select folder&rdquo; below to upload an entire directory at once.
+              {fileCount > 0
+                ? 'Click to add more files, or drag them here.'
+                : 'Click to browse, or drag files here. Use "Select folder" for entire directories.'}
             </p>
-            {fileCount > 0 && (
+            {fileCount > 0 ? (
               <div className="file-meta">
                 <span>{fileCount} file{fileCount !== 1 ? 's' : ''}</span>
                 <span>{totalKB} KB total</span>
+              </div>
+            ) : (
+              <div className="file-formats">
+                {ACCEPTED_EXTENSIONS.map((ext) => (
+                  <span key={ext} className="format-badge">{ext}</span>
+                ))}
               </div>
             )}
           </div>
@@ -207,9 +242,12 @@ export function VesselsPage() {
           onClick={runAnalysis}
           disabled={isLoading || fileCount === 0}
         >
-          {isLoading
-            ? `Analyzing ${fileCount} file${fileCount !== 1 ? 's' : ''}…`
-            : 'Run vessels analysis'}
+          {isLoading ? (
+            <>
+              <span className="btn-spinner" />
+              Analyzing {fileCount} file{fileCount !== 1 ? 's' : ''}…
+            </>
+          ) : 'Run vessels analysis'}
         </button>
         <button
           className="secondary-button"
@@ -218,15 +256,17 @@ export function VesselsPage() {
         >
           Select folder
         </button>
-        <button className="secondary-button" onClick={clearAll} type="button">
-          Clear all
-        </button>
-        <span className="hint">Backend: {API_URL}/api/vessels</span>
+        {fileCount > 0 && (
+          <button className="secondary-button" onClick={clearAll} type="button">
+            Clear all
+          </button>
+        )}
+        <span className="hint">{API_URL}/api/vessels</span>
       </section>
 
       {fileCount > 0 && (
         <section className="file-list-panel">
-          <p className="file-list-header">Queued files ({fileCount})</p>
+          <p className="file-list-header">Queued — {fileCount} file{fileCount !== 1 ? 's' : ''}</p>
           <div className="file-chips">
             {selectedFiles.map((f, i) => (
               <div key={`${f.name}-${i}`} className="file-chip">
@@ -246,7 +286,12 @@ export function VesselsPage() {
         </section>
       )}
 
-      {error ? <section className="alert-box">{error}</section> : null}
+      {error ? (
+        <section className="alert-box">
+          <AlertIcon />
+          {error}
+        </section>
+      ) : null}
 
       {results ? (
         <>
@@ -258,68 +303,69 @@ export function VesselsPage() {
             </section>
           )}
 
-          {/* Century summary — shown when 2+ files are processed */}
           {results.century_summary && results.century_summary.rows.length > 0 && (
-            <div className="century-summary-block">
-              <p className="vessels-file-label">Century summary</p>
-
-              {results.century_summary.files_without_century?.length > 0 && (
-                <p className="century-no-century-note">
-                  Century could not be determined for:{' '}
-                  {results.century_summary.files_without_century.join(', ')}
-                </p>
-              )}
-
-              {/* Profile chart */}
-              {results.century_summary.chart && (
-                <article className="result-card graph-card century-chart-card">
-                  <p className="card-label">Vessel profile by century (normalized means)</p>
-                  <img
-                    className="graph-image"
-                    src={`data:image/png;base64,${results.century_summary.chart}`}
-                    alt="Century vessel profile chart"
-                  />
-                </article>
-              )}
-
-              {/* Summary table */}
-              <article className="result-card table-card century-table-card">
-                <p className="card-label">Mean vessel metrics per century</p>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Century</th>
-                        <th>Files</th>
-                        {CENTURY_METRIC_COLS.map((c) => (
-                          <th key={c.key}>{c.label}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {results.century_summary.rows.map((row, ri) => (
-                        <tr key={`century-${row.century}-${ri}`}>
-                          <td>{centuryLabel(row.century)}</td>
-                          <td>{row.file_count}</td>
+            <>
+              <div className="results-header">
+                <span className="results-header-label">Century summary</span>
+                <div className="results-header-line" />
+              </div>
+              <div className="century-summary-block">
+                {results.century_summary.files_without_century?.length > 0 && (
+                  <p className="century-no-century-note">
+                    Century could not be determined for:{' '}
+                    {results.century_summary.files_without_century.join(', ')}
+                  </p>
+                )}
+                {results.century_summary.chart && (
+                  <article className="result-card graph-card century-chart-card">
+                    <p className="card-label">Vessel profile by century — normalized means</p>
+                    <img
+                      className="graph-image"
+                      src={`data:image/png;base64,${results.century_summary.chart}`}
+                      alt="Century vessel profile chart"
+                    />
+                  </article>
+                )}
+                <article className="result-card table-card century-table-card">
+                  <p className="card-label">Mean vessel metrics per century</p>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Century</th>
+                          <th>Files</th>
                           {CENTURY_METRIC_COLS.map((c) => (
-                            <td key={c.key}>{fmt(row[c.key])}</td>
+                            <th key={c.key}>{c.label}</th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-            </div>
+                      </thead>
+                      <tbody>
+                        {results.century_summary.rows.map((row, ri) => (
+                          <tr key={`century-${row.century}-${ri}`}>
+                            <td>{centuryLabel(row.century)}</td>
+                            <td>{row.file_count}</td>
+                            {CENTURY_METRIC_COLS.map((c) => (
+                              <td key={c.key}>{fmt(row[c.key])}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              </div>
+            </>
           )}
 
           {results.files.map((fileResult, fi) => (
             <div key={`${fileResult.filename}-${fi}`} className="vessels-file-block">
-              <p className="vessels-file-label">
-                File {fi + 1} of {results.total_files_processed}
-              </p>
+              <div className="results-header">
+                <span className="results-header-label">
+                  File {fi + 1} of {results.total_files_processed}
+                </span>
+                <div className="results-header-line" />
+              </div>
 
-              {/* Summary card */}
               <section className="results-grid">
                 <article className="result-card accent-card">
                   <p className="card-label">Vessel summary</p>
@@ -360,10 +406,9 @@ export function VesselsPage() {
                   </ul>
                 </article>
 
-                {/* Window metrics table */}
                 <article className="result-card table-card">
                   <p className="card-label">
-                    Window metrics{fileResult.windows.length > 12 ? ' (first 12 of ' + fileResult.windows.length + ')' : ''}
+                    Window metrics{fileResult.windows.length > 12 ? ` — first 12 of ${fileResult.windows.length}` : ''}
                   </p>
                   <div className="table-wrap">
                     <table>
@@ -396,7 +441,6 @@ export function VesselsPage() {
                 </article>
               </section>
 
-              {/* Normalized per-metric charts */}
               {fileResult.graficos_normalized && Object.keys(fileResult.graficos_normalized).length > 0 && (
                 <section className="vessels-charts-section">
                   <p className="vessels-charts-heading">Vessel profiles — Normalized</p>
@@ -415,7 +459,6 @@ export function VesselsPage() {
                 </section>
               )}
 
-              {/* Raw per-metric charts */}
               {fileResult.graficos_raw && Object.keys(fileResult.graficos_raw).length > 0 && (
                 <section className="vessels-charts-section">
                   <p className="vessels-charts-heading">Vessel profiles — Raw values</p>
