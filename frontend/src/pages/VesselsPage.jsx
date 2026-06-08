@@ -3,6 +3,15 @@ import { useRef, useState } from 'react'
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const ACCEPTED_EXTENSIONS = ['.krn', '.xml', '.musicxml', '.mxl']
 
+const METRIC_LABELS = {
+  flux_rate: 'Flux Rate',
+  avg_gestalt: 'Avg Gestalt',
+  tension_index: 'Tension Index',
+  entropy: 'Entropy',
+  vertical_density: 'Vertical Density',
+  poly_activity: 'Poly Activity',
+}
+
 function formatError(error) {
   if (!error) return ''
   if (typeof error === 'string') return error
@@ -97,11 +106,11 @@ export function VesselsPage() {
           <p className="lead">
             Upload .krn, .xml, or .musicxml files — or an entire folder — and the backend will
             run <span>analyze_temporal_vessels</span>, computing flux rate, gestalt length,
-            tension index, and information entropy across time windows.
+            tension index, information entropy, and polyphonic density across time windows.
           </p>
           <div className="stats-row">
             <div className="stat-card">
-              <span className="stat-value">04</span>
+              <span className="stat-value">06</span>
               <span className="stat-label">vessels measured</span>
             </div>
             <div className="stat-card">
@@ -115,7 +124,6 @@ export function VesselsPage() {
           </div>
         </div>
 
-        {/* Drop zone — click opens individual file picker; folder picker has its own button */}
         <div
           className={`drop-zone ${isDragging ? 'dragging' : ''}`}
           onDragOver={handleDragOver}
@@ -152,7 +160,6 @@ export function VesselsPage() {
             )}
           </div>
 
-          {/* Hidden inputs — clicks are routed from the buttons in the action bar */}
           <input
             ref={filesInputRef}
             className="file-input"
@@ -197,7 +204,6 @@ export function VesselsPage() {
         <span className="hint">Backend: {API_URL}/api/vessels</span>
       </section>
 
-      {/* Queued file chips */}
       {fileCount > 0 && (
         <section className="file-list-panel">
           <p className="file-list-header">Queued files ({fileCount})</p>
@@ -224,7 +230,6 @@ export function VesselsPage() {
 
       {results ? (
         <>
-          {/* Skipped files warning */}
           {results.total_files_skipped > 0 && (
             <section className="alert-box vessels-skipped-box">
               {results.total_files_skipped} archivo
@@ -233,14 +238,14 @@ export function VesselsPage() {
             </section>
           )}
 
-          {/* Per-file results */}
           {results.files.map((fileResult, fi) => (
             <div key={`${fileResult.filename}-${fi}`} className="vessels-file-block">
               <p className="vessels-file-label">
                 File {fi + 1} of {results.total_files_processed}
               </p>
+
+              {/* Summary card */}
               <section className="results-grid">
-                {/* Summary card */}
                 <article className="result-card accent-card">
                   <p className="card-label">Vessel summary</p>
                   <h3 className="vessels-filename">{fileResult.filename}</h3>
@@ -269,35 +274,15 @@ export function VesselsPage() {
                       <span>Avg tension index</span>
                       <strong>{fmt(fileResult.summary.avg_tension, 1)}</strong>
                     </li>
+                    <li>
+                      <span>Avg vertical density</span>
+                      <strong>{fmt(fileResult.summary.avg_vertical_density)}</strong>
+                    </li>
+                    <li>
+                      <span>Avg poly activity</span>
+                      <strong>{fmt(fileResult.summary.avg_poly_activity)}</strong>
+                    </li>
                   </ul>
-                </article>
-
-                {/* Normalized chart */}
-                <article className="result-card graph-card">
-                  <p className="card-label">Normalized vessel profile</p>
-                  {fileResult.grafico_normalizado ? (
-                    <img
-                      className="graph-image"
-                      src={`data:image/png;base64,${fileResult.grafico_normalizado}`}
-                      alt="Normalized vessel profile over relative time"
-                    />
-                  ) : (
-                    <div className="empty-state">No chart data returned.</div>
-                  )}
-                </article>
-
-                {/* Raw chart */}
-                <article className="result-card graph-card">
-                  <p className="card-label">Raw vessel profile</p>
-                  {fileResult.grafico_raw ? (
-                    <img
-                      className="graph-image"
-                      src={`data:image/png;base64,${fileResult.grafico_raw}`}
-                      alt="Raw vessel profile over beats"
-                    />
-                  ) : (
-                    <div className="empty-state">No chart data returned.</div>
-                  )}
                 </article>
 
                 {/* Window metrics table */}
@@ -314,6 +299,8 @@ export function VesselsPage() {
                           <th>Avg Gestalt</th>
                           <th>Tension</th>
                           <th>Entropy</th>
+                          <th>Vert. Density</th>
+                          <th>Poly Activity</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -324,6 +311,8 @@ export function VesselsPage() {
                             <td>{fmt(row.avg_gestalt)}</td>
                             <td>{fmt(row.tension_index, 1)}</td>
                             <td>{fmt(row.entropy)}</td>
+                            <td>{fmt(row.vertical_density)}</td>
+                            <td>{fmt(row.poly_activity)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -331,6 +320,44 @@ export function VesselsPage() {
                   </div>
                 </article>
               </section>
+
+              {/* Normalized per-metric charts */}
+              {fileResult.graficos_normalized && Object.keys(fileResult.graficos_normalized).length > 0 && (
+                <section className="vessels-charts-section">
+                  <p className="vessels-charts-heading">Vessel profiles — Normalized</p>
+                  <div className="vessels-charts-grid">
+                    {Object.entries(fileResult.graficos_normalized).map(([metric, b64]) => (
+                      <article key={`norm-${metric}`} className="result-card graph-card">
+                        <p className="card-label">{METRIC_LABELS[metric] ?? metric}</p>
+                        <img
+                          className="graph-image"
+                          src={`data:image/png;base64,${b64}`}
+                          alt={`${METRIC_LABELS[metric] ?? metric} normalized profile`}
+                        />
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Raw per-metric charts */}
+              {fileResult.graficos_raw && Object.keys(fileResult.graficos_raw).length > 0 && (
+                <section className="vessels-charts-section">
+                  <p className="vessels-charts-heading">Vessel profiles — Raw values</p>
+                  <div className="vessels-charts-grid">
+                    {Object.entries(fileResult.graficos_raw).map(([metric, b64]) => (
+                      <article key={`raw-${metric}`} className="result-card graph-card">
+                        <p className="card-label">{METRIC_LABELS[metric] ?? metric}</p>
+                        <img
+                          className="graph-image"
+                          src={`data:image/png;base64,${b64}`}
+                          alt={`${METRIC_LABELS[metric] ?? metric} raw profile`}
+                        />
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           ))}
         </>

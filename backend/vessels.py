@@ -23,19 +23,49 @@ _VESSEL_COLORS = {
     "avg_gestalt": "#7c9eff",
     "tension_index": "#ff7c7c",
     "entropy": "#7cffa4",
+    "vertical_density": "#c084fc",
+    "poly_activity": "#fb923c",
 }
 _VESSEL_LABELS = {
     "flux_rate": "Flux Rate",
     "avg_gestalt": "Avg Gestalt",
     "tension_index": "Tension Index",
     "entropy": "Entropy",
+    "vertical_density": "Vertical Density",
+    "poly_activity": "Poly Activity",
 }
 _TENSION_WEIGHTS = [10.0, 5.0, 2.0, 1.0, 1.0, 0.5]
 
 
-def analyze_temporal_vessels(score_path: str, window_size: float = WINDOW_SIZE) -> pd.DataFrame:
+def get_polyphonic_density(elements):
     """
-    Analyze a score using the 4 temporal vessels from dynamic time theory.
+    Calcula la densidad de voces y la actividad rítmica independiente.
+    Returns (avg_vertical_density, polyphonic_activity).
+    """
+    if not elements:
+        return 0.0, 0.0
+
+    voice_counts = []
+    for e in elements:
+        if e.isChord:
+            voice_counts.append(len(e.pitches))
+        elif e.isNote:
+            voice_counts.append(1)
+
+    avg_vertical_density = float(np.mean(voice_counts)) if voice_counts else 0.0
+    total_attacks = len(elements)
+    polyphonic_activity = (
+        total_attacks / avg_vertical_density if avg_vertical_density > 0 else 0.0
+    )
+
+    return avg_vertical_density, polyphonic_activity
+
+
+def analyze_temporal_vessels(
+    score_path: str, window_size: float = WINDOW_SIZE
+) -> pd.DataFrame:
+    """
+    Analyze a score using the temporal vessels from dynamic time theory.
     Returns one row per time window.
     """
     score = music21.converter.parse(score_path)
@@ -46,7 +76,9 @@ def analyze_temporal_vessels(score_path: str, window_size: float = WINDOW_SIZE) 
     results = []
     for start in windows:
         end = start + window_size
-        elements = list(flat_score.getElementsByOffset(start, end, includeEndBoundary=False))
+        elements = list(
+            flat_score.getElementsByOffset(start, end, includeEndBoundary=False)
+        )
 
         # Vessel 1 — Flux Rate: distinct attack points per unit time
         offsets = [float(e.offset) for e in elements]
@@ -80,6 +112,9 @@ def analyze_temporal_vessels(score_path: str, window_size: float = WINDOW_SIZE) 
             counts = pd.Series(pitch_classes).value_counts(normalize=True)
             entropy = float(-np.sum(counts.values * np.log2(counts.values + 1e-9)))
 
+        # Vessel 5 & 6 — Polyphonic Density
+        vertical_density, poly_activity = get_polyphonic_density(elements)
+
         results.append(
             {
                 "start_beat": float(start),
@@ -87,6 +122,8 @@ def analyze_temporal_vessels(score_path: str, window_size: float = WINDOW_SIZE) 
                 "avg_gestalt": avg_gestalt,
                 "tension_index": tension_index,
                 "entropy": entropy,
+                "vertical_density": vertical_density,
+                "poly_activity": poly_activity,
             }
         )
 
@@ -96,7 +133,14 @@ def analyze_temporal_vessels(score_path: str, window_size: float = WINDOW_SIZE) 
 def normalize_vessels(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize vessel metrics to [0, 1] and add relative_time column."""
     df = df.copy()
-    cols = ["flux_rate", "avg_gestalt", "tension_index", "entropy"]
+    cols = [
+        "flux_rate",
+        "avg_gestalt",
+        "tension_index",
+        "entropy",
+        "vertical_density",
+        "poly_activity",
+    ]
     available = [c for c in cols if c in df.columns]
     if available and len(df) > 1:
         scaler = MinMaxScaler()
@@ -106,45 +150,51 @@ def normalize_vessels(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _plot_to_base64(df: pd.DataFrame, title: str, x_col: str) -> str:
-    """Render a vessel profile line chart and return as base64-encoded PNG."""
-    fig, ax = plt.subplots(figsize=(11, 4))
-    fig.patch.set_facecolor("#0d1223")
-    ax.set_facecolor("#161f38")
+def _plots_per_metric(df: pd.DataFrame, x_col: str, suffix: str) -> dict[str, str]:
+    """Generate one chart per vessel metric; return dict of {metric: base64 PNG}."""
+    x_label = "Relative Time (0 → 1)" if x_col == "relative_time" else "Start Beat"
+    charts: dict[str, str] = {}
 
     for metric, color in _VESSEL_COLORS.items():
-        if metric in df.columns:
-            ax.plot(
-                df[x_col],
-                df[metric],
-                label=_VESSEL_LABELS[metric],
-                color=color,
-                lw=2.5,
-                alpha=0.9,
-            )
+        if metric not in df.columns:
+            continue
 
-    ax.set_title(title, color="#f8f5eb", fontsize=12, pad=12)
-    x_label = "Relative Time (0 → 1)" if x_col == "relative_time" else "Start Beat"
-    ax.set_xlabel(x_label, color="#ece7d8", fontsize=10)
-    ax.set_ylabel("Value", color="#ece7d8", fontsize=10)
-    ax.tick_params(colors="#ece7d8", labelsize=9)
-    for spine in ax.spines.values():
-        spine.set_color((1.0, 1.0, 1.0, 0.12))
-    ax.legend(facecolor="#1a2240", labelcolor="#ece7d8", framealpha=0.85, fontsize=9)
-    ax.grid(True, alpha=0.12, color="white")
-    plt.tight_layout()
+        fig, ax = plt.subplots(figsize=(10, 3))
+        fig.patch.set_facecolor("#0d1223")
+        ax.set_facecolor("#161f38")
 
-    buf = BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=120)
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode("utf-8")
+        ax.plot(df[x_col], df[metric], color=color, lw=2.5, alpha=0.9)
+        ax.fill_between(df[x_col], df[metric], alpha=0.15, color=color)
+
+        label = _VESSEL_LABELS[metric]
+        ax.set_title(f"{label} — {suffix}", color="#f8f5eb", fontsize=11, pad=10)
+        ax.set_xlabel(x_label, color="#ece7d8", fontsize=9)
+        ax.set_ylabel(label, color="#ece7d8", fontsize=9)
+        ax.tick_params(colors="#ece7d8", labelsize=8)
+        for spine in ax.spines.values():
+            spine.set_color((1.0, 1.0, 1.0, 0.12))
+        ax.grid(True, alpha=0.12, color="white")
+        plt.tight_layout()
+
+        buf = BytesIO()
+        fig.savefig(
+            buf,
+            format="png",
+            bbox_inches="tight",
+            facecolor=fig.get_facecolor(),
+            dpi=110,
+        )
+        plt.close(fig)
+        buf.seek(0)
+        charts[metric] = base64.b64encode(buf.read()).decode("utf-8")
+
+    return charts
 
 
 def analyze_file_for_api(score_path: str) -> dict:
     """
     Full vessel pipeline for a single file.
-    Returns a JSON-serializable dict with raw/normalized data and base64 charts.
+    Returns a JSON-serializable dict with raw/normalized data and per-metric base64 charts.
     """
     raw_df = analyze_temporal_vessels(score_path)
 
@@ -165,14 +215,14 @@ def analyze_file_for_api(score_path: str) -> dict:
         "avg_gestalt": float(raw_df["avg_gestalt"].mean()),
         "peak_entropy_beat": float(raw_df.loc[peak_entropy_idx, "start_beat"]),
         "peak_tension_beat": float(raw_df.loc[peak_tension_idx, "start_beat"]),
+        "avg_vertical_density": float(raw_df["vertical_density"].mean()),
+        "avg_poly_activity": float(raw_df["poly_activity"].mean()),
     }
 
     return {
         "windows": raw_df.to_dict(orient="records"),
         "windows_normalized": norm_df.to_dict(orient="records"),
         "summary": summary,
-        "grafico_normalizado": _plot_to_base64(
-            norm_df, "Vessel Profile — Normalized", x_col="relative_time"
-        ),
-        "grafico_raw": _plot_to_base64(raw_df, "Vessel Profile — Raw Values", x_col="start_beat"),
+        "graficos_normalized": _plots_per_metric(norm_df, "relative_time", "Normalized"),
+        "graficos_raw": _plots_per_metric(raw_df, "start_beat", "Raw"),
     }

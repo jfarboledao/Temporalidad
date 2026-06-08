@@ -539,3 +539,21 @@
   background: rgba(90, 65, 15, 0.48);
   color: #ffe8a0;
 }
+
+.vessels-charts-section {
+  margin-top: 32px;
+}
+
+.vessels-charts-heading {
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.72rem;
+  color: var(--accent-soft);
+  margin: 0 0 14px;
+}
+
+.vessels-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 18px;
+}
